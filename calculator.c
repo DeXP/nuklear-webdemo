@@ -2,7 +2,7 @@
 static void
 calculator(struct nk_context *ctx)
 {
-    if (nk_begin(ctx, "Calculator", nk_rect(450, 270, 180, 250),
+    if (nk_begin(ctx, "Calculator", nk_rect(450, 290, 180, 250),
         NK_WINDOW_BORDER|NK_WINDOW_NO_SCROLLBAR|NK_WINDOW_MOVABLE))
     {
         static int set = 0, prev = 0, op = 0;

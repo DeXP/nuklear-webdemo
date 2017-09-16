@@ -2,7 +2,7 @@
 BIN = demo
 
 # Flags
-CFLAGS = -std=c99 -pedantic -O2
+CFLAGS = -std=c99 -pedantic -O2 -DNKCD=NKC_GLFW
 
 SRC = main.c
 OBJ = $(SRC:.c=.o)
@@ -20,9 +20,7 @@ else
 endif
 
 web:
-	/usr/lib/emscripten/emcc $(SRC) -o index.html -s USE_GLFW=3 -O0
+	emcc $(SRC) -DNKCD=NKC_GLFW -o index.html -s USE_GLFW=3 -Os --preload-file data
 
 $(BIN):
-	@mkdir -p bin
-	rm -f bin/$(BIN) $(OBJS)
-	$(CC) $(SRC) $(CFLAGS) -o bin/$(BIN) $(LIBS)
+	$(CC) $(SRC) $(CFLAGS) -o $(BIN) $(LIBS)

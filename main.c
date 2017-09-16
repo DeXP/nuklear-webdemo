@@ -3,35 +3,15 @@
 #include <stdint.h>
 #include <stdarg.h>
 #include <string.h>
-#include <math.h>
 #include <assert.h>
 #include <math.h>
 #include <limits.h>
 #include <time.h>
 
-#ifdef __EMSCRIPTEN__
-#include <emscripten.h>
-#endif
+#define NK_INCLUDE_STANDARD_VARARGS
+#define NKC_IMPLEMENTATION
+#include "nuklear_cross/nuklear_cross.h"
 
-
-#include <GL/glew.h>
-/*#define GLFW_INCLUDE_ES2*/
-#include <GLFW/glfw3.h>
-
-#define NK_INCLUDE_FIXED_TYPES
-#define NK_INCLUDE_STANDARD_IO
-#define NK_INCLUDE_STANDARD_VARARGS 
-#define NK_INCLUDE_DEFAULT_ALLOCATOR
-#define NK_INCLUDE_VERTEX_BUFFER_OUTPUT
-#define NK_INCLUDE_FONT_BAKING
-#define NK_INCLUDE_DEFAULT_FONT
-#define NK_IMPLEMENTATION
-#define NK_GLFW_GL3_IMPLEMENTATION
-#include "nuklear.h"
-#include "nuklear_glfw_gl3.h"
-
-#define MAX_VERTEX_BUFFER 512 * 1024
-#define MAX_ELEMENT_BUFFER 128 * 1024
 #define UNUSED(a) (void)a
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 #define MAX(a,b) ((a) < (b) ? (b) : (a))
@@ -39,7 +19,7 @@
 
 int result = 1;
 
-GLFWwindow* win;
+struct nkc nkcx;
 struct nk_context *ctx;
 struct nk_color background;
 
@@ -48,14 +28,14 @@ int wasFullscreen = 0;
 int width = 0;
 int height = 0;
 
-void render();
-void error_callback(int error, const char* description);
 
 #include "style.c"
 
 #include "overview.c"
 #include "calculator.c"
 #include "node_editor.c"
+#include "extendedx.c"
+
 
 int style_id[] = {
     999,
@@ -74,20 +54,29 @@ const char* style_name[] = {
 };
 
 
-void render() {
+void render(void* loopArg){
+   struct nkc* nkcHandle = (struct nkc*)loopArg;
+   struct nk_context *ctx = nkc_get_ctx(nkcHandle);
    static int selected_item = 0;
 
    /* Input */
-   glfwPollEvents();
-   nk_glfw3_new_frame();
+   union nkc_event e = nkc_poll_events(nkcHandle);
+   if( (e.type == NKC_EWINDOW) && (e.window.param == NKC_EQUIT) ){
+       nkc_stop_main_loop(nkcHandle);
+   }
+
 
    /* GUI */
    {
    node_editor(ctx);
    overview(ctx);
    calculator(ctx);
+        basic_demo(ctx, &media);
+        button_demo(ctx, &media);
+        grid_demo(ctx, &media);
 
-   if (nk_begin(ctx, "Demo", nk_rect(450, 10, 230, 250),
+
+   if (nk_begin(ctx, "Demo", nk_rect(430, 10, 230, 250),
        NK_WINDOW_BORDER|NK_WINDOW_MOVABLE|NK_WINDOW_SCALABLE|
        NK_WINDOW_MINIMIZABLE|NK_WINDOW_TITLE))
    {
@@ -138,106 +127,23 @@ void render() {
    }
 
    /* Draw */
-   {float bg[4];
-   nk_color_fv(bg, background);
-   glfwGetWindowSize(win, &width, &height);
-   glViewport(0, 0, width, height);
-   glClear(GL_COLOR_BUFFER_BIT);
-   glClearColor(bg[0], bg[1], bg[2], bg[3]);
-   /* IMPORTANT: `nk_glfw_render` modifies some global OpenGL state
-    * with blending, scissor, face culling, depth test and viewport and
-    * defaults everything back into a default state.
-    * Make sure to either a.) save and restore or b.) reset your own state after
-    * rendering the UI. */
-   nk_glfw3_render(NK_ANTI_ALIASING_ON, MAX_VERTEX_BUFFER, MAX_ELEMENT_BUFFER);
-   glfwSwapBuffers(win);}
+   nkc_render(nkcHandle, background);
 }
 
-void error_callback(int error, const char* description)
-{
-   fprintf(stderr, "Error %d: %s\n", error, description);
-}
-
-void windowSizeCallback(GLFWwindow* window, int width, int height)
-{
-#ifdef __EMSCRIPTEN__
-   int isInFullscreen = EM_ASM_INT_V(return !!(document.fullscreenElement || document.mozFullScreenElement || document.webkitFullscreenElement || document.msFullscreenElement));
-#else
-   int isInFullscreen = 0;
-#endif
-   if (isInFullscreen && !wasFullscreen)
-   {
-      printf("Successfully transitioned to fullscreen mode!\n");
-      wasFullscreen = isInFullscreen;
-   }
-
-   if (wasFullscreen && !isInFullscreen)
-   {
-      printf("Exited fullscreen. Test succeeded.\n");
-      result = 1;
-      #ifdef REPORT_RESULT
-      REPORT_RESULT();
-      #endif
-      wasFullscreen = isInFullscreen;
-#ifdef __EMSCRIPTEN__
-      emscripten_cancel_main_loop();
-#endif
-      return;
-   }
-}
-
-int main()
-{
-   /* Setup win */
-   glfwSetErrorCallback(error_callback);
-   if (!glfwInit())
-   {
-      result = 0;
-      printf("Could not create window. Test failed.\n");
-      #ifdef REPORT_RESULT
-      REPORT_RESULT();
-      #endif
-      return -1;
-   }
-   glfwWindowHint(GLFW_RESIZABLE , 1);
-   win = glfwCreateWindow(1024, 1024, "GLFW resizing test - windowed", NULL, NULL);
-   if (!win)
-   {
-      result = 0;
-      printf("Could not create window. Test failed.\n");
-      #ifdef REPORT_RESULT
-      REPORT_RESULT();
-      #endif
-      glfwTerminate();
-      return -1;
-   }
-   glfwMakeContextCurrent(win);
-
-   /* Install callbacks */
-   glfwSetWindowSizeCallback(win, windowSizeCallback);
-
-   /* Nuklear */
-   ctx = nk_glfw3_init(win, NK_GLFW3_INSTALL_CALLBACKS);
-   /* Load Fonts: if none of these are loaded a default font will be used  */
-   {struct nk_font_atlas *atlas;
-   nk_glfw3_font_stash_begin(&atlas);
-   /*struct nk_font *droid = nk_font_atlas_add_from_file(atlas, "../../../extra_font/DroidSans.ttf", 14, 0);*/
-   /*struct nk_font *roboto = nk_font_atlas_add_from_file(atlas, "../../../extra_font/Roboto-Regular.ttf", 14, 0);*/
-   /*struct nk_font *future = nk_font_atlas_add_from_file(atlas, "../../../extra_font/kenvector_future_thin.ttf", 13, 0);*/
-   /*struct nk_font *clean = nk_font_atlas_add_from_file(atlas, "../../../extra_font/ProggyClean.ttf", 12, 0);*/
-   /*struct nk_font *tiny = nk_font_atlas_add_from_file(atlas, "../../../extra_font/ProggyTiny.ttf", 10, 0);*/
-   /*struct nk_font *cousine = nk_font_atlas_add_from_file(atlas, "../../../extra_font/Cousine-Regular.ttf", 13, 0);*/
-   nk_glfw3_font_stash_end();
-   /*nk_style_set_font(ctx, &droid->handle);*/}
+int main(){
+   int width, height;
    background = nk_rgb(20, 20, 20);
 
-   /* Main loop */
-#ifdef __EMSCRIPTEN__
-   emscripten_set_main_loop(render, 0, 1);
-#endif
+   if( nkc_get_desktop_size(&nkcx, &width, &height) ){
+	   width -= 20; height -= 20; /* for emscripten canvas' border */
+   } else {
+	   width = 1280; height = 720;
+   }
 
-   nk_glfw3_shutdown();
-   glfwTerminate();
-
+   if( nkc_init(&nkcx, "Nuklear Demo/Example - Nuklear+ Example", width, height, NKC_WIN_NORMAL) ){
+       extendedInit(&nkcx);
+       nkc_set_main_loop(&nkcx, render, (void*)&nkcx );
+   }
+   nkc_shutdown(&nkcx);
    return 0;
 }
